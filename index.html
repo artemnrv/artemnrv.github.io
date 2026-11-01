@@ -308,6 +308,16 @@
 
   /* дополнительные экраны работы: колонка слева от главного (макет: 158×344, зазор 13, до главного 15) */
   .viewer-stage { display: flex; align-items: center; gap: calc(15px * var(--k)); flex: none; }
+  /* десктоп: экран и текст всегда стоят на одних местах, скриншоты просто пристраиваются слева от экрана */
+  @media (min-width: 701px) {
+    .viewer-stage { position: relative; gap: 0; }
+    .viewer-thumbs {
+      position: absolute;
+      right: calc(100% + 15px * var(--k));
+      top: 50%;
+      transform: translateY(-50%);
+    }
+  }
   .viewer-thumbs { display: none; flex-direction: column; gap: calc(13px * var(--k)); }
   .viewer.has-thumbs .viewer-thumbs { display: flex; }
   .viewer:not(.has-thumbs) .viewer-stage { gap: 0; }
@@ -719,7 +729,7 @@
    Пароль хранится как SHA-256, а не открытым текстом. Новый хэш: в консоли браузера
    crypto.subtle.digest("SHA-256", new TextEncoder().encode("1234")).then(b => console.log([...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("")))
    Это защита от случайных посетителей, а не от того, кто откроет код страницы. */
-const GATE = true;
+const GATE = false;
 const GATE_HASH = "3d1e557b540ac045b3b327994a351f08a443f9216f9b2b8d3a0f42b58671ac83";
 const GATE_DAYS = 30;   // сколько дней браузер помнит, что пароль введён
 
@@ -913,6 +923,11 @@ const WORKS = [
     title: "AI-видео в «Моём магазине»", meta: "Перекрёсток · 2026", colors: ["#3a2a1a", "#d8a46a"],
     tags: ["перекресток", "ai видео", "визуал"],
     desc: "Сгенерировал AI-видео для страницы магазина в приложении: вместо статичного баннера — живая сцена с продуктом. Фуд-визуал уровня рекламы, без продакшена." },
+  { src: "assets/vkusy.jpg", full: "assets/vkusy-full.mp4", poster: "assets/vkusy-poster.jpg",
+    shots: ["assets/vkusy-shot-2.jpg", "assets/vkusy-shot-3.jpg"],
+    title: "Вкусы мира", meta: "Перекрёсток · 2026", colors: ["#3f7a2a", "#9fd66a"],
+    tags: ["перекресток", "игра", "механики", "вайбкод"],
+    desc: "Игра от механики до рабочего кода за 1,5 недели. Прототип ушёл в разработку вместо макетов" },
   { nda: true, src: "assets/nda-3.jpg", title: "NDA", meta: "" },
 ];
 
@@ -1891,7 +1906,8 @@ function fillInfo(i) {
 }
 
 function setScale() {
-  const k = Math.min(1, innerHeight / 1024, (innerWidth / 1440) * 1.12);
+  // место слева под колонку скриншотов: экран + текст по центру, скриншоты не вылезают за край
+  const k = Math.min(1, innerHeight / 1024, (innerWidth - 32) / 1280);
   viewer.style.setProperty("--k", k.toFixed(3));
 }
 const slotRect = () => {
