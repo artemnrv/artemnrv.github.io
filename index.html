@@ -11,6 +11,9 @@
 </style>
 <title>Артём Нуриев</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/favicon-192.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="description" content="Артём Нуриев — продуктовый дизайнер в X5 Digital">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2327,7 +2330,7 @@ const sound = (() => {
   const btn = document.getElementById("sound-toggle");
   const music = new Audio("assets/music.mp3");
   music.loop = true;
-  music.preload = "none";
+  music.preload = "auto";   // качаем сразу, чтобы музыка стартовала без паузы
   music.volume = 0;
   const riserSrc = "assets/riser.mp3";
   // звук клика: декодируем один раз, чтобы быстрые клики не обрывали друг друга
@@ -2344,6 +2347,21 @@ const sound = (() => {
     return loading[name];
   };
   const loadClick = () => { load("click"); load("snare"); load("kick"); };
+  /* всё звуковое начинает грузиться сразу при открытии страницы, а не по первому клику:
+     короткие звуки декодируются сразу (аудиодвижок можно создать и до разрешения на звук),
+     трек для скретча скачивается сразу, а тяжёлое декодирование — после анимации, чтобы она не дёргалась */
+  const musicBytes = fetch("assets/music.mp3").then((r) => r.arrayBuffer()).catch(() => new ArrayBuffer(0));
+  try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  loadClick();
+  let needleScheduled = false;
+  const scheduleNeedle = () => {
+    if (needleScheduled) return;
+    needleScheduled = true;
+    const since = window.__introT0 ? performance.now() - window.__introT0 : 0;
+    const wait = Math.max(0, 2800 - since);
+    const go = () => (window.requestIdleCallback ? requestIdleCallback(() => loadNeedle(), { timeout: 1500 }) : loadNeedle());
+    setTimeout(go, wait);
+  };
   const playBuf = (name, vol, rate) => {
     if (!on) return;
     if (!bufs[name]) { load(name); return; }
@@ -2380,7 +2398,9 @@ const sound = (() => {
     if (!on || e.button > 0) return;
     const t = e.target;
     if (t.closest("#sound-toggle, .enter")) return;
-    if (t.closest("a, button, .viewer, .reel, .gate-cells")) playClick();
+    // по ленте — без звука: на телефоне её крутят пальцем, клик мешал бы скретчу
+    if (t.closest(".reel")) return;
+    if (t.closest("a, button, .viewer, .gate-cells")) playClick();
     else if (!t.closest(".gate")) { playDrum(e.clientY); ripple(e.clientX, e.clientY); }
   }, true);
   let riser = null;
@@ -2417,7 +2437,7 @@ const sound = (() => {
   let waiting = false;
   const start = () => {
     loadClick();
-    loadNeedle();
+    scheduleNeedle();
     if (actx && actx.state === "suspended") actx.resume().catch(() => {});
     return music.play().then(() => {
       stopWaiting();
@@ -2541,8 +2561,7 @@ const sound = (() => {
     const url = URL.createObjectURL(new Blob([NEEDLE], { type: "application/javascript" }));
     needleLoading = Promise.all([
       actx.audioWorklet.addModule(url),
-      fetch("assets/music.mp3").then((r) => r.arrayBuffer())
-        .then((b) => new Promise((res, rej) => actx.decodeAudioData(b, res, rej))),
+      musicBytes.then((b) => new Promise((res, rej) => actx.decodeAudioData(b.slice(0), res, rej))),
     ]).then(([, buf]) => {
       const node = new AudioWorkletNode(actx, "needle", { outputChannelCount: [2] });
       node.connect(actx.destination);
