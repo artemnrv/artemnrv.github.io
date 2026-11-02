@@ -446,10 +446,42 @@
 
   /* телефон: крупный заголовок, компактная лента — по макету 440px */
   @media (max-width: 700px) {
-    .hero { padding-block: clamp(36px, 7vh, 64px) 0; gap: 22px; }
+    /* первый экран — только текст, лента выглядывает снизу под затемнением;
+       чуть прокрутил — лента крупно на весь экран */
+    .hero {
+      /* текст прижат кверху с умеренным отступом, лента сразу под ним —
+         без пустоты вокруг текста; на высоких экранах карточка видна больше чем наполовину */
+      justify-content: flex-start;
+      padding-block: calc(clamp(36px, 9svh, 96px) + env(safe-area-inset-top, 0px)) 0;
+      gap: 22px;
+      box-sizing: border-box;
+    }
     .headline { font-size: min(13.2vw, 64px); max-width: 76vw; }
     .lead { font-size: min(3vw, 14px); max-width: 68vw; }
+    :root { --reel-gap: clamp(28px, 6svh, 60px); }
+    .stage { padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)); }
+    .mobile-fade {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      height: 16svh;
+      z-index: 5;
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(10, 10, 10, 0) 0%, rgba(10, 10, 10, 0.75) 60%, #0a0a0a 100%);
+      opacity: var(--fade, 1);
+      transition: opacity 0.2s linear;
+    }
+    /* звук на телефоне — компактная кнопка вверху справа, чтобы не спорить с «Write me» внизу */
+    .sound-toggle.sound-toggle {
+      left: auto; bottom: auto;
+      right: max(14px, calc(env(safe-area-inset-right, 0px) + 12px));
+      top: calc(14px + env(safe-area-inset-top, 0px));
+      width: 40px; height: 40px;
+      padding: 0;
+      justify-content: center;
+    }
+    .sound-toggle.sound-toggle .sound-label { display: none; }
   }
+  @media (min-width: 701px) { .mobile-fade { display: none; } }
 
   @media (max-width: 700px) {
     .viewer-layout { flex-direction: column; gap: 32px; padding-block: 64px 48px; }
@@ -509,6 +541,8 @@
   .sound-toggle.on .sound-bars i:nth-child(4) { animation-delay: -0.15s; animation-duration: 0.9s; }
   @keyframes sound-bar { 0%, 100% { height: 3px; } 50% { height: 14px; } }
   html.locked .sound-toggle { display: none; }
+  /* в просмотре кейса кнопка звука прячется, чтобы не спорить с крестиком */
+  body:has(.viewer:not([hidden])) .sound-toggle.sound-toggle { visibility: hidden; pointer-events: none; }
   .tap-ripple {
     position: fixed;
     width: 90px; height: 90px;
@@ -619,8 +653,8 @@
   .float-cta:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
   body:has(.viewer:not([hidden])) .float-cta, html.locked .float-cta { opacity: 0; pointer-events: none; transition-delay: 0s; }
   @media (max-width: 700px) {
-    .float-cta { font-size: 22px; gap: 9px; padding: 11px 24px 13px; }
-    .float-cta-icon { width: 18px; height: 15px; }
+    .float-cta { font-size: 28px; gap: 12px; padding: 14px 34px 16px; }
+    .float-cta-icon { width: 23px; height: 19px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -981,6 +1015,7 @@ function initGate(resolve) {
   </button>
   <button class="enter-mute" type="button">без звука</button>
 </div>
+<div class="mobile-fade" aria-hidden="true"></div>
 <main class="stage">
   <canvas id="gl" aria-hidden="true"></canvas>
   <header class="hero">
@@ -1102,7 +1137,8 @@ function measure() {
   const gapPx = parseFloat(getComputedStyle(reel).marginTop) || 64;
   const free = vh - (lead ? lead.getBoundingClientRect().bottom + scrollY : vh * 0.45) - gapPx - (sig ? sig.offsetHeight : 50);
   const byHeight = (free / 1.02) * (264 / 354.316);
-  const w = Math.max(140, Math.min(340, vw < 700 ? vw * 0.6 : vw * 0.236, byHeight));
+  // на телефоне карточки крупные (~62% ширины) и не ужимаются под высоту — страница там прокручивается
+  const w = vw < 700 ? Math.min(380, vw * 0.62) : Math.max(140, Math.min(340, vw * 0.236, byHeight));
   const k = w / 264;
   card = { w, h: 354.316 * k, r: 52.8 * k, gap: 17 * k };
   reel.style.height = Math.round(card.h * 1.02) + "px";
@@ -2644,6 +2680,15 @@ const fontsReady = Promise.race([
   ]),
   new Promise((r) => setTimeout(r, 1500)),
 ]);
+
+/* телефон: затемнение снизу уходит по мере прокрутки */
+(() => {
+  const el = document.querySelector(".mobile-fade");
+  if (!el) return;
+  const upd = () => el.style.setProperty("--fade", String(Math.max(0, 1 - scrollY / (innerHeight * 0.22))));
+  addEventListener("scroll", upd, { passive: true });
+  upd();
+})();
 
 /* ---------- старт ----------
    звук включён по умолчанию. Если браузер сразу разрешил звук (повторный визит, ввод пароля) —
