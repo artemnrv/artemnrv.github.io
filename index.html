@@ -525,6 +525,60 @@
     .sound-toggle.on .sound-bars i { animation: none; height: 9px; }
   }
 
+  /* заставка «войти со звуком»: только когда браузер не разрешил звук сам */
+  .enter {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+    cursor: pointer;
+    transition: opacity 0.7s var(--ease-out);
+  }
+  .enter[hidden] { display: none; }
+  .enter.leaving { opacity: 0; pointer-events: none; }
+  .enter-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    height: 56px;
+    padding: 0 28px 0 24px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+    font: 400 15px/1 var(--font-mono);
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: transform 0.5s var(--ease-spring), border-color 0.3s, background 0.3s, box-shadow 0.4s;
+    animation: fade 0.9s var(--ease-out) both, enter-glow 2.4s ease-in-out 0.9s infinite;
+  }
+  .enter-btn .sound-bars { height: 18px; gap: 3px; }
+  .enter-btn .sound-bars i { width: 2.5px; animation: sound-bar 1s ease-in-out infinite; }
+  .enter-btn .sound-bars i:nth-child(2) { animation-delay: -0.35s; animation-duration: 0.8s; }
+  .enter-btn .sound-bars i:nth-child(3) { animation-delay: -0.6s; animation-duration: 1.15s; }
+  .enter-btn .sound-bars i:nth-child(4) { animation-delay: -0.15s; animation-duration: 0.9s; }
+  .enter:hover .enter-btn, .enter-btn:focus-visible { transform: scale(1.05); border-color: rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.08); }
+  .enter-btn:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
+  @keyframes enter-glow { 0%, 100% { box-shadow: 0 0 0 rgba(255, 255, 255, 0); } 50% { box-shadow: 0 0 44px rgba(255, 255, 255, 0.12); } }
+  .enter-mute {
+    padding: 6px 10px;
+    border: 0;
+    background: none;
+    color: rgba(255, 255, 255, 0.35);
+    font: 400 12px/1 var(--font-mono);
+    cursor: pointer;
+    transition: color 0.3s;
+    animation: fade 0.9s var(--ease-out) 0.3s both;
+  }
+  .enter-mute:hover, .enter-mute:focus-visible { color: rgba(255, 255, 255, 0.75); }
+  .enter-mute:focus-visible { outline: 1px solid rgba(255, 255, 255, 0.5); }
+  @media (prefers-reduced-motion: reduce) { .enter-btn, .enter-btn .sound-bars i { animation: none; } }
+
   /* кнопка «Write me» на главной: всплывает снизу после закрытия просмотра */
   .float-cta {
     position: fixed;
@@ -917,6 +971,13 @@ function initGate(resolve) {
   <span class="sound-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
   <span class="sound-label">звук</span>
 </button>
+<div class="enter" id="enter" hidden>
+  <button class="enter-btn" type="button">
+    <span class="sound-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <span>войти со звуком</span>
+  </button>
+  <button class="enter-mute" type="button">без звука</button>
+</div>
 <main class="stage">
   <canvas id="gl" aria-hidden="true"></canvas>
   <header class="hero">
@@ -2318,7 +2379,7 @@ const sound = (() => {
   document.addEventListener("pointerdown", (e) => {
     if (!on || e.button > 0) return;
     const t = e.target;
-    if (t.closest("#sound-toggle")) return;
+    if (t.closest("#sound-toggle, .enter")) return;
     if (t.closest("a, button, .viewer, .reel, .gate-cells")) playClick();
     else if (!t.closest(".gate")) { playDrum(e.clientY); ripple(e.clientX, e.clientY); }
   }, true);
@@ -2350,17 +2411,43 @@ const sound = (() => {
     btn.setAttribute("aria-pressed", String(on));
     btn.setAttribute("aria-label", on ? "Выключить звук" : "Включить звук");
   };
-  const enable = (withRiser) => {
-    on = true;
+  // звук включён по умолчанию. Браузер запустит его, как только разрешит: сразу (если уже можно)
+  // или на первом клике, касании или клавише. Выключил кнопкой — запоминаем и больше не включаем сами
+  const evs = ["click", "keydown", "touchend"];
+  let waiting = false;
+  const start = () => {
     loadClick();
     loadNeedle();
+    if (actx && actx.state === "suspended") actx.resume().catch(() => {});
+    return music.play().then(() => {
+      stopWaiting();
+      fadeTo(SOUND.musicVolume, 2500);
+    });
+  };
+  const resume = (e) => {
+    if (!on) { stopWaiting(); return; }
+    if (e.target.closest && e.target.closest("#sound-toggle")) return;
+    start().catch(() => {});
+  };
+  const waitForGesture = () => {
+    if (waiting) return;
+    waiting = true;
+    evs.forEach((n) => addEventListener(n, resume, true));
+  };
+  const stopWaiting = () => {
+    if (!waiting) return;
+    waiting = false;
+    evs.forEach((n) => removeEventListener(n, resume, true));
+  };
+  const enable = () => {
+    on = true;
     render();
-    music.play().then(() => fadeTo(SOUND.musicVolume, 2500)).catch(() => { on = false; render(); });
-    if (withRiser) playRiser();
+    start().catch(waitForGesture);
     try { localStorage.setItem("sound", "on"); } catch (e) {}
   };
   const disable = () => {
     on = false;
+    stopWaiting();
     if (needle) needle.port.postMessage({ gain: 0 });
     scratching = false;
     render();
@@ -2369,28 +2456,8 @@ const sound = (() => {
   };
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    on ? disable() : enable(false);
+    on ? disable() : enable();
   });
-
-  // звук включали раньше — запускаем после первого касания страницы
-  let wanted = false;
-  try { wanted = localStorage.getItem("sound") === "on"; } catch (e) {}
-  if (wanted) {
-    // ждём действие, которое браузер точно считает разрешением на звук; если не вышло — пробуем на следующем
-    const evs = ["click", "keydown", "touchend"];
-    const stop = () => evs.forEach((n) => removeEventListener(n, resume, true));
-    const resume = (e) => {
-      if (e.target.closest && e.target.closest("#sound-toggle")) { stop(); return; }
-      if (on) { stop(); return; }
-      on = true;
-      loadClick();
-      loadNeedle();
-      render();
-      music.play().then(() => { stop(); fadeTo(SOUND.musicVolume, 2500); })
-        .catch(() => { on = false; render(); });
-    };
-    evs.forEach((n) => addEventListener(n, resume, true));
-  }
 
   // вкладка скрыта — музыка на паузе
   document.addEventListener("visibilitychange", () => {
@@ -2406,23 +2473,29 @@ const sound = (() => {
   const introEl = new Audio(riserSrc);
   introEl.preload = "auto";
   const RISER_OFFSET = 0.15;   // с какой секунды райзера начинать: пик звука (~1.8 с) попадает на момент, когда буквы встают на место
+  let introPlaying = null;
+  // возвращает обещание: true — райзер заиграл (или ещё грузится), false — браузер не разрешил звук
   const introRiser = () => {
-    let pref = null;
-    try { pref = localStorage.getItem("sound"); } catch (e) {}
-    if (pref === "off") return;
+    if (!on) return Promise.resolve(false);
     const t0 = performance.now();
     try {
+      if (introPlaying) introEl.removeEventListener("playing", introPlaying);
       introEl.volume = SOUND.riserVolume;
       introEl.currentTime = RISER_OFFSET;
       // если звук стартовал с опозданием — перескакиваем вперёд на это опоздание, чтобы не отставать от анимации
-      introEl.addEventListener("playing", () => {
+      introPlaying = () => {
         const lag = (performance.now() - t0) / 1000;
         // опоздал больше чем на секунду — пик уже прошёл, лучше промолчать, чем звучать невпопад
         if (lag > 1.2) introEl.pause();
         else if (lag > 0.04) { try { introEl.currentTime = RISER_OFFSET + lag; } catch (e) {} }
-      }, { once: true });
-      introEl.play().catch(() => {});
-    } catch (e) {}
+      };
+      introEl.addEventListener("playing", introPlaying, { once: true });
+      const p = introEl.play();
+      return Promise.race([
+        p.then(() => true, () => false),
+        new Promise((r) => setTimeout(() => r(true), 700)),
+      ]);
+    } catch (e) { return Promise.resolve(false); }
   };
   /* скретч, как у диджея: пока крутишь ленту рукой, игла стоит на текущем месте трека,
      и музыка играет вперёд или назад со скоростью руки — те самые «чики-чики».
@@ -2516,7 +2589,16 @@ const sound = (() => {
       }
     }
   };
-  return { introRiser, isOn: () => on, scratch };
+  let pref = null;
+  try { pref = localStorage.getItem("sound"); } catch (e) {}
+  if (pref !== "off") {
+    on = true;
+    render();
+    // пробуем сразу; браузер, скорее всего, попросит сначала действие — тогда ждём первый клик
+    setTimeout(() => { start().catch(waitForGesture); }, 0);
+  }
+
+  return { introRiser, isOn: () => on, scratch, start: () => start().catch(waitForGesture), off: disable };
 })();
 
 /* ---------- запасной вариант без WebGL: обычная бегущая строка ---------- */
@@ -2544,12 +2626,37 @@ const fontsReady = Promise.race([
   new Promise((r) => setTimeout(r, 1500)),
 ]);
 
-Promise.all([fontsReady, window.gateReady]).then(() => {
-  try { sound.introRiser(); } catch (e) {}
+/* ---------- старт ----------
+   звук включён по умолчанию. Если браузер сразу разрешил звук (повторный визит, ввод пароля) —
+   анимация стартует вместе с райзером. Если нет — короткая заставка «войти со звуком»:
+   нажатие даёт браузеру разрешение, и сборка текста идёт уже со звуком */
+function startSite() {
   playLettersIntro();
   let ok = false;
   try { ok = startGL(); } catch (e) { console.warn(e); }
   if (!ok) startFallback();
+}
+function showEnter() {
+  const el = document.getElementById("enter");
+  el.hidden = false;
+  const go = (withSound) => (e) => {
+    e.stopPropagation();
+    el.removeEventListener("click", onSound);
+    if (withSound) { sound.start(); sound.introRiser(); }
+    else sound.off();
+    el.classList.add("leaving");
+    startSite();
+    setTimeout(() => el.remove(), 900);
+  };
+  const onSound = go(true);
+  el.addEventListener("click", onSound);
+  el.querySelector(".enter-mute").addEventListener("click", go(false), { once: true });
+}
+Promise.all([fontsReady, window.gateReady]).then(async () => {
+  let allowed = false;
+  try { allowed = sound.isOn() ? await sound.introRiser() : true; } catch (e) { allowed = true; }
+  if (allowed) startSite();
+  else showEnter();
 });
 </script>
 </body>
